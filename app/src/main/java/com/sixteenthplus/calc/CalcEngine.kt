@@ -90,9 +90,9 @@ internal fun mergeMixedNumbers(toks: List<String>): List<String> {
             val prev = out.lastOrNull()
             val next = toks.getOrNull(i + 1)
             if (isNumTok(prev) && isNumTok(next)) {
-                val prevVal = numericValueOf(prev!!)
+                val prevVal = if (prev == "-") 0.0 else numericValueOf(prev!!) // "- 3⁄4": sign before a bare fraction
                 val nextMag = abs(numericValueOf(next!!))
-                val combined = if (prevVal < 0) prevVal - nextMag else prevVal + nextMag
+                val combined = if (prev!!.startsWith("-")) prevVal - nextMag else prevVal + nextMag
                 out[out.size - 1] = combined.toString()
                 i += 2
                 continue
@@ -341,7 +341,7 @@ data class CalcState(
     fun equals(): CalcState {
         if (missingDenominator(tokens)) return copy(error = "Enter a denominator")
         val v = evaluateTokens(tokens) ?: return this
-        if (!v.isFinite()) return this
+        if (!v.isFinite()) return copy(error = "Can't divide by zero") // ÷ 0 and x/0 are the only ways to get here
         return copy(lastResult = v, hasResult = true)
     }
 }

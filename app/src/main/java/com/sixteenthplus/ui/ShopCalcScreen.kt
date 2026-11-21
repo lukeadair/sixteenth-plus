@@ -61,6 +61,9 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalView
 import com.sixteenthplus.calc.isNumTok
 import com.sixteenthplus.calc.isPlainNum
@@ -255,7 +258,7 @@ private fun buildExpr(text: String, cursor: Int, style: TextStyle, caretOn: () -
     val toks = tokenize(text)
     val annotated = buildAnnotatedString {
         fun pending(id: String, num: String?, active: Boolean) {
-            appendInlineContent(id)
+            appendInlineContent(id, "${num.orEmpty()}/") // alternate text is what screen readers speak
             val w = maxOf(num?.length ?: 0, 2) * 0.34f + 0.55f
             inline[id] = InlineTextContent(Placeholder(w.em, 1.5.em, PlaceholderVerticalAlign.Center)) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -273,7 +276,7 @@ private fun buildExpr(text: String, cursor: Int, style: TextStyle, caretOn: () -
                     val (n, den) = tok.removePrefix("-").split(FRAC_SLASH)
                     if (tok.startsWith("-")) append("-")
                     val id = "f$i"
-                    appendInlineContent(id)
+                    appendInlineContent(id, "$n/$den")
                     val w = maxOf(n.length, den.length.coerceAtLeast(if (den.isEmpty()) 2 else 1)) * 0.34f + 0.55f
                     // cursor at the fraction's end: digits go to its denominator, so the caret shows there
                     val active = cursor == e + tok.length
@@ -583,13 +586,14 @@ private fun RowScope.Key(
         KeyKind.Op -> Triple(32.sp, FontWeight.SemiBold, 0.sp)
         KeyKind.Equals -> Triple(34.sp, FontWeight.Bold, 0.sp)
         KeyKind.Func -> Triple(18.sp, FontWeight.Normal, 1.sp)
-        KeyKind.Space -> Triple(13.sp, FontWeight.Medium, 2.sp)
         else -> Triple(22.sp, FontWeight.Medium, 0.sp)
     }
     // Two weight-2 keys line up with four weight-1 keys plus their gaps.
     PressKey(
         onClick = onClick,
-        modifier = Modifier.weight(span.toFloat()).fillMaxHeight(),
+        // a picture has no text for screen readers to speak, so name the key
+        modifier = Modifier.weight(span.toFloat()).fillMaxHeight()
+            .then(if (icon != null) Modifier.semantics { contentDescription = label } else Modifier),
         enabled = enabled,
         face = face,
         lip = lip,
@@ -609,7 +613,11 @@ private fun RowScope.Key(
  */
 @Composable
 private fun FracKeyIcon(enabled: Boolean, whole: Boolean, denominatorNext: Boolean) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+    Row(
+        Modifier.clearAndSetSemantics {}, // decorative: the key itself carries the spoken name
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
         if (whole) BasicText("a", style = TextStyle(Palette.KeyFg, 26.sp, FontWeight.Medium, fontFamily = Oswald))
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
             FracBox(lit = enabled && !denominatorNext)
@@ -664,7 +672,7 @@ private fun Keypad(update: (CalcState.() -> CalcState) -> Unit, state: CalcState
             // starts the fraction of a mixed number, then moves to its denominator
             val enabled = state.fracKeyEnabled
             val icon = @Composable { FracKeyIcon(enabled, state.fracKeyHasWhole, state.fracKeyOpensDenominator) }
-            Key("a b/c", KeyKind.Space, span = 2, enabled = enabled, icon = icon) { update { space() } }
+            Key("Fraction", KeyKind.Space, span = 2, enabled = enabled, icon = icon) { update { space() } }
             Key("=", KeyKind.Equals, span = 2) { update { equals() } }
         }
     }

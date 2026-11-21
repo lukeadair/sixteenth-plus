@@ -63,9 +63,18 @@ class CalcEngineTest {
         assertEquals(3.5, s.lastResult!!, 1e-9)
     }
 
-    @Test fun divideByZeroIgnored() {
-        val s = press("5 ÷ 0 =")
-        assertFalse(s.hasResult)
+    @Test fun divideByZeroShowsError() {
+        for (keys in listOf("5 ÷ 0 =", "3 /16 ÷ 0 =", "7 sp 3 sp 0 =")) {
+            val s = press(keys)
+            assertFalse(keys, s.hasResult)
+            assertEquals(keys, "Can't divide by zero", s.error)
+        }
+    }
+
+    @Test fun signBeforeBareFraction() {
+        // cursor moved to the start of " 3⁄4", then − or ±
+        assertEquals(-0.75, press("sp 3 /4").moveCursor(0).op("−").equals().lastResult!!, 1e-9)
+        assertEquals(-0.75, press("sp 3 /4").moveCursor(0).toggleSign().equals().lastResult!!, 1e-9)
     }
 
     @Test fun backspaceRevealsExpression() {
