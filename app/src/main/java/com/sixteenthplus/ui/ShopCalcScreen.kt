@@ -80,6 +80,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
@@ -257,35 +258,27 @@ private fun buildExpr(text: String, cursor: Int, style: TextStyle, caretOn: () -
     var e = 0
     val toks = tokenize(text)
     val annotated = buildAnnotatedString {
-        fun pending(id: String, num: String?, active: Boolean) {
-            appendInlineContent(id, "${num.orEmpty()}/") // alternate text is what screen readers speak
-            val w = maxOf(num?.length ?: 0, 2) * 0.34f + 0.55f
+        // A stacked fraction as inline content (null part = empty box). [alt] is what screen readers speak.
+        fun frac(id: String, num: String?, den: String?, alt: String, numCaret: Boolean, denCaret: Boolean) {
+            appendInlineContent(id, alt)
+            val w = maxOf(num?.length ?: 2, den?.length ?: 2) * 0.34f + 0.55f
             inline[id] = InlineTextContent(Placeholder(w.em, 1.5.em, PlaceholderVerticalAlign.Center)) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Fraction(num, null, style, numCaret = { active && caretOn() })
+                    Fraction(num, den, style, numCaret = { numCaret && caretOn() }, denCaret = { denCaret && caretOn() })
                 }
             }
-            if (active) pendingActive = true
+            if (numCaret || denCaret) pendingActive = true
         }
         toks.forEachIndexed { i, tok ->
             val d = length
             val numerator = toks.getOrNull(i - 1) == " " && isPlainNum(tok)
             when {
-                numerator -> pending("p$i", tok, cursor in e + 1..e + tok.length)
+                numerator -> frac("p$i", tok, null, "$tok/", numCaret = cursor in e + 1..e + tok.length, denCaret = false)
                 isFractionTok(tok) -> {
                     val (n, den) = tok.removePrefix("-").split(FRAC_SLASH)
                     if (tok.startsWith("-")) append("-")
-                    val id = "f$i"
-                    appendInlineContent(id, "$n/$den")
-                    val w = maxOf(n.length, den.length.coerceAtLeast(if (den.isEmpty()) 2 else 1)) * 0.34f + 0.55f
                     // cursor at the fraction's end: digits go to its denominator, so the caret shows there
-                    val active = cursor == e + tok.length
-                    if (active) pendingActive = true
-                    inline[id] = InlineTextContent(Placeholder(w.em, 1.5.em, PlaceholderVerticalAlign.Center)) {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Fraction(n, den.ifEmpty { null }, style, denCaret = { active && caretOn() })
-                        }
-                    }
+                    frac("f$i", n, den.ifEmpty { null }, "$n/$den", numCaret = false, denCaret = cursor == e + tok.length)
                 }
                 isOp(tok) -> withStyle(SpanStyle(color = Palette.TapeYellow)) { append(" $tok ") }
                 // a full mono space is ~0.6em; shrink it so "7 3⁄4" reads as one mixed number
@@ -296,7 +289,7 @@ private fun buildExpr(text: String, cursor: Int, style: TextStyle, caretOn: () -
             e += tok.length
             if (tok == " " && !isNumTok(toks.getOrNull(i + 1))) { // nothing typed after the space yet
                 val d2 = length
-                pending("e$i", null, cursor == e)
+                frac("e$i", null, null, "/", numCaret = cursor == e, denCaret = false)
                 segs += Seg(d2, length - d2, e, 0, atomic = true)
             }
         }
@@ -555,7 +548,25 @@ private fun TapeRow(onDenom: (Int) -> Unit) {
     }
 }
 
-private enum class KeyKind { Num, Op, Paren, Clear, Func, Space, Equals }
+/** Each key type's look. Flat keys (Func, Space) get a thin lip and an outline. */
+private enum class KeyKind(
+    val face: Color,
+    val fg: Color,
+    val size: TextUnit,
+    val weight: FontWeight,
+    val lip: Color = Palette.Line,
+    val flat: Boolean = false,
+    val spacing: TextUnit = 0.sp,
+    val family: FontFamily = Oswald,
+) {
+    Num(Palette.PanelRaised, Palette.KeyFg, 22.sp, FontWeight.Medium),
+    Op(Palette.KeyOpBg, Palette.TapeYellow, 32.sp, FontWeight.SemiBold),
+    Paren(Palette.KeyOpBg, Palette.KeyFg, 19.sp, FontWeight.SemiBold),
+    Clear(Palette.PanelRaised, Palette.Danger, 22.sp, FontWeight.Medium),
+    Func(Palette.Housing, Palette.DisplayDim, 18.sp, FontWeight.Normal, flat = true, spacing = 1.sp, family = FontFamily.Default),
+    Space(Palette.Panel, Palette.DisplayDim, 22.sp, FontWeight.Medium, flat = true), // draws an icon, text style unused
+    Equals(Palette.TapeYellow, Palette.Housing, 34.sp, FontWeight.Bold, lip = Palette.TapeYellowDim),
+}
 
 @Composable
 private fun RowScope.Key(
@@ -566,28 +577,6 @@ private fun RowScope.Key(
     icon: (@Composable () -> Unit)? = null, // drawn instead of the text label
     onClick: () -> Unit,
 ) {
-    val face = when (kind) {
-        KeyKind.Op, KeyKind.Paren -> Palette.KeyOpBg
-        KeyKind.Equals -> Palette.TapeYellow
-        KeyKind.Func -> Palette.Housing
-        KeyKind.Space -> Palette.Panel
-        else -> Palette.PanelRaised
-    }
-    val lip = if (kind == KeyKind.Equals) Palette.TapeYellowDim else Palette.Line
-    val fg = when (kind) {
-        KeyKind.Op -> Palette.TapeYellow
-        KeyKind.Equals -> Palette.Housing
-        KeyKind.Clear -> Palette.Danger
-        KeyKind.Func, KeyKind.Space -> Palette.DisplayDim
-        else -> Palette.KeyFg
-    }
-    val (size, weight, spacing) = when (kind) {
-        KeyKind.Paren -> Triple(19.sp, FontWeight.SemiBold, 0.sp)
-        KeyKind.Op -> Triple(32.sp, FontWeight.SemiBold, 0.sp)
-        KeyKind.Equals -> Triple(34.sp, FontWeight.Bold, 0.sp)
-        KeyKind.Func -> Triple(18.sp, FontWeight.Normal, 1.sp)
-        else -> Triple(22.sp, FontWeight.Medium, 0.sp)
-    }
     // Two weight-2 keys line up with four weight-1 keys plus their gaps.
     PressKey(
         onClick = onClick,
@@ -595,15 +584,15 @@ private fun RowScope.Key(
         modifier = Modifier.weight(span.toFloat()).fillMaxHeight()
             .then(if (icon != null) Modifier.semantics { contentDescription = label } else Modifier),
         enabled = enabled,
-        face = face,
-        lip = lip,
-        lipHeight = if (kind == KeyKind.Func || kind == KeyKind.Space) 1.dp else 3.dp,
-        outline = when (kind) { KeyKind.Func, KeyKind.Space -> Palette.Line; else -> null },
+        face = kind.face,
+        lip = kind.lip,
+        lipHeight = if (kind.flat) 1.dp else 3.dp,
+        outline = if (kind.flat) Palette.Line else null,
         dashed = kind == KeyKind.Space,
     ) {
         if (icon != null) return@PressKey icon()
-        val family = if (kind == KeyKind.Func) FontFamily.Default else Oswald
-        BasicText(label, style = TextStyle(fg, size, weight, fontFamily = family, letterSpacing = spacing, textAlign = TextAlign.Center))
+        val style = TextStyle(kind.fg, kind.size, kind.weight, fontFamily = kind.family, letterSpacing = kind.spacing)
+        BasicText(label, style = style.copy(textAlign = TextAlign.Center))
     }
 }
 
