@@ -1,4 +1,4 @@
-package com.shopcalc.ui
+package com.sixteenthplus.ui
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.ExperimentalTextApi
@@ -6,7 +6,7 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
-import com.shopcalc.R
+import com.sixteenthplus.R
 
 object Palette {
     val Housing = Color(0xFF1E1C1A)

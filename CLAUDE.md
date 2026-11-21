@@ -16,8 +16,8 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
 ## Layout
-- `app/src/main/java/com/shopcalc/calc/CalcEngine.kt`: all math and key handling. Pure Kotlin, no Android imports. Keep it that way so it stays unit-testable.
-- `app/src/main/java/com/shopcalc/ui/ShopCalcScreen.kt`: Compose UI; `Theme.kt` holds `Palette` and fonts.
+- `app/src/main/java/com/sixteenthplus/calc/CalcEngine.kt`: all math and key handling. Pure Kotlin, no Android imports. Keep it that way so it stays unit-testable.
+- `app/src/main/java/com/sixteenthplus/ui/ShopCalcScreen.kt`: Compose UI; `Theme.kt` holds `Palette` and fonts.
 - `app/src/test/.../CalcEngineTest.kt`: engine tests, using a key-script DSL: `press("7 sp 1 /4 × 3 =")`.
 
 ## How the engine works
@@ -30,7 +30,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - Any change to engine behaviour gets a test in `CalcEngineTest` written with `press(...)`.
 - Rounding and display (`toNearest16Plus`, `gaugeFor`) are the product. Check edge cases: exact sixteenths, 32nds, values just under a whole number, negatives, `−0`.
 - Keep it lean: no new dependencies, DI, ViewModel or Material library unless a feature truly needs it. The UI is built on `foundation` + `BasicText` on purpose.
-- Package/app id is still `com.shopcalc` (the old name). Don't rename it as a side effect of another change; that changes the installed app identity.
+- Package/app id is `com.sixteenthplus`. Changing `applicationId` makes Android treat it as a different app, so never change it as a side effect.
 
 ## Workflow
 - Run `testDebugUnitTest` before calling a change done; run `assembleDebug` for UI changes.

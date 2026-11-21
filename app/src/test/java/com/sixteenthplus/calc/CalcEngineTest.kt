@@ -1,4 +1,4 @@
-package com.shopcalc.calc
+package com.sixteenthplus.calc
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

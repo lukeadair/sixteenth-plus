@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.shopcalc"
+    namespace = "com.sixteenthplus"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.shopcalc"
+        applicationId = "com.sixteenthplus"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

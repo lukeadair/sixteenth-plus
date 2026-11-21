@@ -1,4 +1,4 @@
-package com.shopcalc.calc
+package com.sixteenthplus.calc
 
 import java.util.Locale
 import kotlin.math.abs

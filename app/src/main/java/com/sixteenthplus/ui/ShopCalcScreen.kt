@@ -1,4 +1,4 @@
-package com.shopcalc.ui
+package com.sixteenthplus.ui
 
 import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.Canvas
@@ -58,12 +58,12 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.shopcalc.calc.CalcState
-import com.shopcalc.calc.FRAC_SLASH
-import com.shopcalc.calc.gaugeFor
-import com.shopcalc.calc.isFractionTok
-import com.shopcalc.calc.isOp
-import com.shopcalc.calc.toNearest16Plus
+import com.sixteenthplus.calc.CalcState
+import com.sixteenthplus.calc.FRAC_SLASH
+import com.sixteenthplus.calc.gaugeFor
+import com.sixteenthplus.calc.isFractionTok
+import com.sixteenthplus.calc.isOp
+import com.sixteenthplus.calc.toNearest16Plus
 
 private val CalcStateSaver = listSaver<CalcState, Any?>(
     save = { listOf(ArrayList(it.tokens), it.entering, it.hasResult, it.lastResult) },

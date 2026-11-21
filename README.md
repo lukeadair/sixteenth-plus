@@ -6,8 +6,8 @@ the value sits halfway to the next 1/16) and shows a gauge of where the exact
 answer falls between ticks.
 
 ## Layout
-- `app/src/main/java/com/shopcalc/calc/CalcEngine.kt` – pure math/state engine (no Android deps)
-- `app/src/main/java/com/shopcalc/ui/` – Compose UI and palette/fonts
+- `app/src/main/java/com/sixteenthplus/calc/CalcEngine.kt` – pure math/state engine (no Android deps)
+- `app/src/main/java/com/sixteenthplus/ui/` – Compose UI and palette/fonts
 - `app/src/test/…/CalcEngineTest.kt` – unit tests for the engine
 - `third_party/` – OFL licenses for the bundled Oswald and JetBrains Mono fonts
 
