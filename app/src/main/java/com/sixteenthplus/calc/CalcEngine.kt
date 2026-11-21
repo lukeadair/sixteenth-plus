@@ -254,14 +254,40 @@ data class CalcState(
         }
     }
 
-    /** The "a b/c" key: first press starts the fraction part ("7 "), second opens its denominator ("7 3⁄"). */
+    /** True when the next "a b/c" press opens the denominator: the cursor ends a typed numerator ("7 3|"). */
+    val fracKeyOpensDenominator: Boolean
+        get() {
+            if (hasResult) return false
+            val toks = tokenize(before)
+            val p = toks.lastOrNull()
+            return isPlainNum(p) && p!!.any(Char::isDigit) && toks.getOrNull(toks.size - 2) == " " && !isNumTok(next)
+        }
+
+    /** False when pressing "a b/c" would do nothing, so the UI can disable the key. */
+    val fracKeyEnabled: Boolean get() = space() != this
+
+    /** True when the fraction the "a b/c" key starts or edits has a whole number in front ("7 3⁄4", not "3⁄4"). */
+    val fracKeyHasWhole: Boolean
+        get() {
+            val toks = tokenize(startFresh().before)
+            var i = toks.size - 1
+            if (i >= 1 && toks[i - 1] == " " && isNumTok(toks[i])) i-- // skip a numerator or fraction after a space
+            if (i >= 0 && toks[i] == " ") i--
+            return isNumTok(toks.getOrNull(i))
+        }
+
+    /**
+     * The "a b/c" key: after a number it starts the fraction part ("7 "), where no number can attach
+     * (start, after an operator or "(") it starts a bare fraction (" ", evaluated as just the fraction),
+     * and inside a typed numerator it opens the denominator ("7 3⁄"). Otherwise it returns this unchanged.
+     */
     fun space(): CalcState {
         val s = startFresh()
-        val toks = tokenize(s.before)
-        val p = toks.lastOrNull()
-        val inNumerator = isPlainNum(p) && p!!.any(Char::isDigit) && toks.getOrNull(toks.size - 2) == " "
-        if (inNumerator && !isNumTok(s.next)) return s.insert(FRAC_SLASH)
-        if (p == null || p == " " || p == "(" || p == "-" || isOp(p) || isFractionTok(p) || s.next == " ") return s
+        if (s.fracKeyOpensDenominator) return s.insert(FRAC_SLASH)
+        val p = s.prev
+        val n = s.next
+        if ((p == null || isOp(p) || p == "(") && !isNumTok(n) && n != " ") return s.insert(" ")
+        if (p == null || p == " " || p == "(" || p == "-" || isOp(p) || isFractionTok(p) || n == " ") return this
         return s.insert(" ")
     }
 

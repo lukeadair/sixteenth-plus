@@ -131,6 +131,31 @@ class CalcEngineTest {
         assertFalse(press("7 sp 3 sp =").hasResult)
     }
 
+    @Test fun fracKeyStep() {
+        assertFalse(press("7").fracKeyOpensDenominator)
+        assertFalse(press("7 sp").fracKeyOpensDenominator) // numerator not typed yet
+        assertTrue(press("7 sp 3").fracKeyOpensDenominator)
+        assertFalse(press("7 sp 3 sp").fracKeyOpensDenominator) // already in the denominator
+    }
+
+    @Test fun fracKeyEnabled() {
+        for (keys in listOf("", "7", "7 +", "(", "7 =", "7 sp 3", "( 2 + 3 )")) {
+            assertTrue(keys, press(keys).fracKeyEnabled)
+        }
+        for (keys in listOf("7 sp", "7 sp 3 sp", "7 sp 3 /4", "sp")) assertFalse(keys, press(keys).fracKeyEnabled)
+    }
+
+    @Test fun bareFraction() {
+        assertEquals(0.09375, result("sp 3 sp 32 ="), 1e-9) // 3/32 with no whole number
+        assertEquals(7.75, result("7 + sp 3 /4 ="), 1e-9)
+        assertEquals("Enter a denominator", press("sp 3 =").error)
+    }
+
+    @Test fun fracKeyHasWhole() {
+        for (keys in listOf("7", "7 sp", "7 sp 3", "7 sp 3 sp")) assertTrue(keys, press(keys).fracKeyHasWhole)
+        for (keys in listOf("", "7 +", "sp", "sp 3", "sp 3 sp", "7 =")) assertFalse(keys, press(keys).fracKeyHasWhole)
+    }
+
     @Test fun missingDenominatorError() {
         for (keys in listOf("7 sp 3 sp =", "7 sp 3 =", "7 sp =", "7 sp 3 + 1 =")) {
             val s = press(keys)
