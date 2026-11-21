@@ -8,8 +8,8 @@ import kotlin.math.roundToLong
 /*
  * Pure-Kotlin port of the Sixteenth+ (originally "Shop Calc") engine from cabinet_calc.html.
  *
- * Tokens are strings:
- *  - plain numbers, e.g. "24", "-3", "0.5" (may still be "entering")
+ * The expression is plain text that tokenizes into:
+ *  - plain numbers, e.g. "24", "-3", "0.5" (ASCII "-" is a sign, never an operator)
  *  - fraction tokens, e.g. "3⁄16" (built via a preset denominator button)
  *  - operators: "+", "−", "×", "÷"
  *  - parens: "(" ")"
@@ -23,6 +23,12 @@ private val PRECEDENCE = mapOf("+" to 1, "−" to 1, "×" to 2, "÷" to 2)
 fun isOp(t: String?) = t != null && t in OPS
 fun isFractionTok(t: String?) = t != null && t.contains(FRAC_SLASH)
 fun isNumTok(t: String?) = t != null && t != " " && t !in OPS && t != "(" && t != ")"
+fun isPlainNum(t: String?) = isNumTok(t) && !isFractionTok(t)
+
+private val TOKEN = Regex("-?[0-9.]*$FRAC_SLASH[0-9]+|-?[0-9.]+|-|[+−×÷() ]")
+
+/** Split expression text into tokens. Tokens are contiguous: their lengths sum to text.length. */
+fun tokenize(text: String): List<String> = TOKEN.findAll(text).map { it.value }.toList()
 
 private fun parseNum(s: String): Double = s.toDoubleOrNull() ?: Double.NaN
 
@@ -100,7 +106,14 @@ internal fun mergeMixedNumbers(toks: List<String>): List<String> {
 }
 
 fun evaluateTokens(rawTokens: List<String>): Double? {
-    val t = mergeMixedNumbers(rawTokens).toMutableList()
+    val t = mutableListOf<String>()
+    for (tok in mergeMixedNumbers(rawTokens)) {
+        if (tok == "(" && t.lastOrNull() == "-") t[t.size - 1] = "-1" // "-(…)" is -1 × (…)
+        val p = t.lastOrNull()
+        val leftDone = p == ")" || (isNumTok(p) && p != "-")
+        if ((tok == "(" && leftDone) || (p == ")" && isNumTok(tok))) t.add("×") // 2(3), (2)3, (2)(3)
+        t.add(tok)
+    }
     while (t.isNotEmpty() && (isOp(t.last()) || t.last() == "(")) t.removeAt(t.size - 1)
     if (t.isEmpty()) return null
     var open = 0
@@ -170,104 +183,119 @@ fun gaugeFor(value: Double): Gauge? {
     return Gauge(sixteenthLabel(lower16, whole), sixteenthLabel(lower16 + 1, whole), position)
 }
 
-/** Immutable calculator state; every key returns a new state. */
+/** Keep the cursor in range and out of the middle of a fraction token (fractions are atomic). */
+private fun snap(text: String, c: Int): Int {
+    val cc = c.coerceIn(0, text.length)
+    var start = 0
+    for (tok in tokenize(text)) {
+        val end = start + tok.length
+        if (isFractionTok(tok) && cc > start && cc < end) return end
+        start = end
+    }
+    return cc
+}
+
+/**
+ * Immutable calculator state; every key returns a new state.
+ * [text] is the expression and [cursor] a char index into it; keys edit at the cursor.
+ */
 data class CalcState(
-    val tokens: List<String> = emptyList(),
-    val entering: Boolean = false,   // last token is a plain number being typed
+    val text: String = "",
+    val cursor: Int = 0,
     val hasResult: Boolean = false,  // display shows an evaluated answer
     val lastResult: Double? = null,  // exact (unrounded) last answer
 ) {
-    private val last get() = tokens.lastOrNull()
-    private fun replaceLast(v: String) = tokens.dropLast(1) + v
+    val tokens: List<String> get() = tokenize(text)
+    private val before get() = text.substring(0, cursor)
+    private val after get() = text.substring(cursor)
+    /** Token left / right of the cursor (only part of it when the cursor is inside a number). */
+    private val prev get() = tokenize(before).lastOrNull()
+    private val next get() = tokenize(after).firstOrNull()
 
-    private fun startFresh() =
-        if (hasResult) copy(tokens = emptyList(), entering = false, hasResult = false) else this
+    private fun edit(t: String, c: Int) = copy(text = t, cursor = snap(t, c))
+    private fun insert(s: String) = edit(before + s + after, cursor + s.length)
+    private fun touchesFraction() = isFractionTok(prev) || isFractionTok(next)
 
-    /** Start a new number token; "(2+3)5" means "(2+3)×5", same as lparen(). */
-    private fun startNumber(t: String) =
-        copy(tokens = tokens + (if (last == ")") listOf("×", t) else listOf(t)), entering = true)
+    private fun startFresh() = if (hasResult) copy(text = "", cursor = 0, hasResult = false) else this
+
+    fun moveCursor(to: Int) = copy(cursor = snap(text, to), hasResult = false)
 
     fun digit(d: String): CalcState {
         val s = startFresh()
-        return if (s.entering) s.copy(tokens = s.replaceLast(s.last + d)) else s.startNumber(d)
+        return if (s.touchesFraction()) s else s.insert(d)
     }
 
     fun dot(): CalcState {
         val s = startFresh()
-        return if (s.entering) {
-            if (s.last!!.contains('.')) s else s.copy(tokens = s.replaceLast(s.last + "."))
-        } else s.startNumber("0.")
+        val p = s.prev.takeIf(::isPlainNum) ?: ""
+        val n = s.next?.takeIf { isPlainNum(it) && !it.startsWith("-") } ?: ""
+        if (s.touchesFraction() || '.' in p + n) return s
+        return s.insert(if (p.any(Char::isDigit)) "." else "0.")
     }
 
     fun op(op: String): CalcState {
-        var s = this
-        if (hasResult && lastResult != null) {
-            // continue the calculation from the exact previous answer
-            s = copy(tokens = listOf(trimNumber(lastResult)), hasResult = false, entering = false)
+        val s = if (hasResult && lastResult != null) {
+            val t = trimNumber(lastResult) // continue from the previous answer
+            copy(text = t, cursor = t.length, hasResult = false)
+        } else this
+        val p = s.prev
+        return when {
+            p == null -> if (op == "−") s.insert("-") else s // leading minus is a sign
+            isOp(p) -> s.edit(s.before.dropLast(1) + op + s.after, s.cursor)
+            p == " " || p == "(" || p == "-" -> s
+            isOp(s.next) -> s.edit(s.before + op + s.after.drop(1), s.cursor + 1)
+            else -> s.insert(op)
         }
-        if (s.tokens.isEmpty()) {
-            return if (op == "−") s.copy(tokens = listOf("-"), entering = true) else s
-        }
-        val l = s.last
-        val toks = when {
-            isOp(l) -> s.replaceLast(op)
-            l == " " || l == "(" -> return s
-            else -> s.tokens + op
-        }
-        return s.copy(tokens = toks, entering = false)
     }
 
     fun space(): CalcState {
         val s = startFresh()
-        val l = s.last
-        if (l == null || l == " " || isOp(l) || l == "(") return s
-        return s.copy(tokens = s.tokens + " ", entering = false)
+        val p = s.prev
+        if (p == null || p == " " || p == "(" || p == "-" || isOp(p) || s.next == " ") return s
+        return s.insert(" ")
     }
 
-    fun lparen(): CalcState {
-        val s = startFresh()
-        val l = s.last
-        val implicitTimes = l != null && (isNumTok(l) || l == ")")
-        return s.copy(tokens = s.tokens + (if (implicitTimes) listOf("×", "(") else listOf("(")), entering = false)
-    }
+    fun lparen() = startFresh().insert("(")
 
     fun rparen(): CalcState {
         val s = startFresh()
-        val open = s.tokens.count { it == "(" } - s.tokens.count { it == ")" }
-        val l = s.last
-        if (open <= 0 || l == "(" || l == " " || isOp(l)) return s
-        return s.copy(tokens = s.tokens + ")", entering = false)
+        val open = s.before.count { it == '(' } - s.before.count { it == ')' }
+        val p = s.prev
+        if (open <= 0 || p == null || p == "(" || p == " " || p == "-" || isOp(p)) return s
+        return s.insert(")")
     }
 
     fun backspace(): CalcState {
-        if (hasResult) return copy(hasResult = false) // reveal the expression again for editing
-        val l = last ?: return this
-        if (entering && isNumTok(l) && !isFractionTok(l) && l.length > 1) {
-            return copy(tokens = replaceLast(l.dropLast(1)))
-        }
-        val toks = tokens.dropLast(1)
-        val nl = toks.lastOrNull()
-        return copy(tokens = toks, entering = isNumTok(nl) && !isFractionTok(nl))
+        if (hasResult) return copy(hasResult = false) // hide the answer, back to editing
+        val p = prev ?: return this
+        val n = if (isPlainNum(p)) 1 else p.length // fractions, ops, parens go whole
+        return edit(before.dropLast(n) + after, cursor - n)
     }
 
     fun clear() = CalcState()
 
     fun toggleSign(): CalcState {
         val s = startFresh()
-        val l = s.last
-        return when {
-            isNumTok(l) && !isFractionTok(l) ->
-                s.copy(tokens = s.replaceLast(if (l!!.startsWith("-")) l.drop(1) else "-$l"))
-            l == null || isOp(l) || l == "(" -> s.copy(tokens = s.tokens + "-", entering = true)
-            else -> s
+        val p = s.prev
+        val n = s.next
+        val (start, end) = when {
+            isNumTok(p) -> {
+                val sameNumber = isPlainNum(p) && isPlainNum(n) && !n!!.startsWith("-")
+                s.cursor - p!!.length to s.cursor + (if (sameNumber) n!!.length else 0)
+            }
+            isNumTok(n) && p != " " -> s.cursor to s.cursor + n!!.length
+            p == null || isOp(p) || p == "(" -> return s.insert("-")
+            else -> return s
         }
+        val tok = s.text.substring(start, end)
+        val flipped = if (tok.startsWith("-")) tok.drop(1) else "-$tok"
+        return s.edit(s.text.replaceRange(start, end, flipped), start + flipped.length)
     }
 
     fun denom(d: Int): CalcState {
-        if (!entering || hasResult) return this
-        val l = last
-        if (!isNumTok(l) || isFractionTok(l) || l == "" || l == "-" || l == ".") return this
-        return copy(tokens = replaceLast("$l$FRAC_SLASH$d"), entering = false)
+        val p = prev
+        if (hasResult || !isPlainNum(p) || p!!.none(Char::isDigit) || isNumTok(next)) return this
+        return insert("$FRAC_SLASH$d")
     }
 
     fun equals(): CalcState {

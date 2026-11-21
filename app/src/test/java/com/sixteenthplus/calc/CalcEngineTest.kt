@@ -102,4 +102,30 @@ class CalcEngineTest {
         assertEquals("3", trimNumber(3.0))
         assertEquals("0.333333", trimNumber(1.0 / 3))
     }
+
+    @Test fun cursorInsertsMidExpression() {
+        val s = press("12 + 3").moveCursor(2).digit("5")
+        assertEquals("125+3", s.text)
+        assertEquals(3, s.cursor)
+        assertEquals(128.0, s.equals().lastResult!!, 1e-9)
+    }
+
+    @Test fun backspaceAtCursor() {
+        assertEquals("1+3", press("12 + 3").moveCursor(2).backspace().text)
+    }
+
+    @Test fun fractionIsAtomic() {
+        val s = press("3 /16 + 1")
+        assertEquals(4, s.moveCursor(2).cursor) // inside "3⁄16" snaps to its end
+        assertEquals("+1", s.moveCursor(4).backspace().text)
+        assertEquals(s.text, s.moveCursor(4).digit("5").text) // no digits glued onto a fraction
+    }
+
+    @Test fun toggleSignAtCursor() {
+        assertEquals("2×-3", press("2 × 3").moveCursor(2).toggleSign().text)
+    }
+
+    @Test fun negatedParen() {
+        assertEquals(-5.0, result("± ( 2 + 3 ="), 1e-9)
+    }
 }

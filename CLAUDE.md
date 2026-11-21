@@ -22,9 +22,11 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ## How the engine works
 - `CalcState` is immutable; every key press returns a new state. The UI only calls `update { digit("7") }` etc.
+- State is `text` + `cursor` (char index); keys edit at the cursor. `tokenize(text)` gives tokens on demand. Fraction tokens are atomic: `snap` keeps the cursor out of them, and backspace removes them whole.
+- The UI shows the text as one `AnnotatedString` (fractions are inline content), and `Expr.toDisplay`/`toEngine` map cursor positions between display and engine offsets.
 - Tokens are strings. Operators are Unicode `+ − × ÷` (U+2212 minus, not ASCII `-`); ASCII `-` only appears as a sign inside a number token. Fractions use U+2044 `⁄` (`FRAC_SLASH`), not `/`.
 - A space token joins a mixed number (`7 1⁄4`). `mergeMixedNumbers` collapses it to one value **before** precedence, so `3 × 7 1⁄4` = 21.75.
-- `(` after a number or `)`, and a number after `)`, get an implicit `×`.
+- Implicit `×` (`2(3)`, `(2)3`, `-(…)`) is added in `evaluateTokens`, not when typing, so it works wherever the cursor inserts.
 
 ## Rules
 - Any change to engine behaviour gets a test in `CalcEngineTest` written with `press(...)`.

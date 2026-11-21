@@ -1,21 +1,27 @@
 package com.sixteenthplus.ui
 
 import android.view.HapticFeedbackConstants
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -31,6 +37,8 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -44,19 +52,29 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.sixteenthplus.calc.CalcState
 import com.sixteenthplus.calc.FRAC_SLASH
@@ -64,13 +82,12 @@ import com.sixteenthplus.calc.gaugeFor
 import com.sixteenthplus.calc.isFractionTok
 import com.sixteenthplus.calc.isOp
 import com.sixteenthplus.calc.toNearest16Plus
+import com.sixteenthplus.calc.tokenize
+import java.util.Locale
 
 private val CalcStateSaver = listSaver<CalcState, Any?>(
-    save = { listOf(ArrayList(it.tokens), it.entering, it.hasResult, it.lastResult) },
-    restore = {
-        @Suppress("UNCHECKED_CAST")
-        CalcState(it[0] as List<String>, it[1] as Boolean, it[2] as Boolean, it[3] as Double?)
-    },
+    save = { listOf(it.text, it.cursor, it.hasResult, it.lastResult) },
+    restore = { CalcState(it[0] as String, it[1] as Int, it[2] as Boolean, it[3] as Double?) },
 )
 
 @Composable
@@ -93,7 +110,7 @@ fun ShopCalcScreen() {
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Brand()
-            Display(state, Modifier.weight(1f).fillMaxWidth())
+            Display(state, onCursor = { c -> update { moveCursor(c) } }, Modifier.weight(1f).fillMaxWidth())
             TapeRow(onDenom = { d -> update { denom(d) } })
             Keypad(update)
         }
@@ -121,14 +138,19 @@ private fun Brand() {
 // ---------------------------------------------------------------- display
 
 private val ExprSize = 28.sp
+private val AnswerSize = 36.sp
 
+/** Expression on top (editable, with cursor); answer bottom-right with its gauge; mm bottom-left. */
 @Composable
-private fun Display(state: CalcState, modifier: Modifier) {
+private fun Display(state: CalcState, onCursor: (Int) -> Unit, modifier: Modifier) {
     val shape = RoundedCornerShape(10.dp)
     val scroll = rememberScrollState()
-    LaunchedEffect(state.tokens, state.hasResult) { scroll.animateScrollTo(scroll.maxValue) }
+    LaunchedEffect(state.text) {
+        if (state.cursor == state.text.length) scroll.animateScrollTo(scroll.maxValue)
+    }
+    val result = state.lastResult.takeIf { state.hasResult }
 
-    Box(
+    Column(
         modifier
             .heightIn(min = 110.dp)
             .clip(shape)
@@ -151,29 +173,29 @@ private fun Display(state: CalcState, modifier: Modifier) {
                 }
             }
             .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Row(
-            Modifier.fillMaxSize(),
-            verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Box(
-                Modifier.weight(1f).fillMaxHeight(),
-                contentAlignment = Alignment.BottomStart,
-            ) {
-                Box(Modifier.verticalScroll(scroll)) {
-                    when {
-                        state.hasResult && state.lastResult != null -> AnswerExpr(state.lastResult)
-                        state.tokens.isEmpty() -> BasicText(
-                            "Type a sequence, then press =",
-                            style = TextStyle(Palette.DisplayDim, 16.sp, fontFamily = JetBrainsMono),
-                        )
-                        else -> TokenExpr(state.tokens)
-                    }
-                }
+        Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(scroll)) {
+            if (state.text.isEmpty()) {
+                BasicText(
+                    "Type a sequence, then press =",
+                    style = TextStyle(Palette.DisplayDim, 16.sp, fontFamily = JetBrainsMono),
+                )
+            } else {
+                ExprEditor(state, onCursor)
             }
-            if (state.hasResult && state.lastResult != null) {
-                gaugeFor(state.lastResult)?.let { GaugeView(it.lowLabel, it.highLabel, it.position) }
+        }
+        if (result != null) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+                BasicText(
+                    String.format(Locale.US, "%.1f mm", result * 25.4),
+                    Modifier.weight(1f),
+                    TextStyle(Palette.DisplayDim, 13.sp, fontFamily = JetBrainsMono),
+                )
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    AnswerExpr(result)
+                    gaugeFor(result)?.let { GaugeView(it.lowLabel, it.highLabel, it.position) }
+                }
             }
         }
     }
@@ -182,31 +204,98 @@ private fun Display(state: CalcState, modifier: Modifier) {
 private fun exprStyle(color: Color, weight: FontWeight) =
     TextStyle(color, ExprSize, weight, fontFamily = JetBrainsMono, letterSpacing = 0.3.sp)
 
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun TokenExpr(tokens: List<String>) {
-    val style = exprStyle(Palette.DisplayFg, FontWeight.Medium)
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-        tokens.forEach { tok ->
-            val m = Modifier.align(Alignment.CenterVertically)
-            when {
-                tok == " " -> Spacer(m.width(16.dp).height(1.dp))
-                isFractionTok(tok) -> {
-                    val (n, d) = tok.split(FRAC_SLASH)
-                    Fraction(n, d, style, m)
+/** Display chars [dStart, dStart+dLen) show engine chars [eStart, eStart+eLen); atomic = cursor can't go inside. */
+private class Seg(val dStart: Int, val dLen: Int, val eStart: Int, val eLen: Int, val atomic: Boolean)
+
+/** The expression as one annotated string (fractions are inline stacked boxes) plus cursor mapping. */
+private class Expr(val text: AnnotatedString, val inline: Map<String, InlineTextContent>, private val segs: List<Seg>) {
+    fun toDisplay(e: Int): Int {
+        for (s in segs) {
+            if (e <= s.eStart) return s.dStart
+            if (e < s.eStart + s.eLen) return s.dStart + if (s.atomic) s.dLen else e - s.eStart
+        }
+        return text.length
+    }
+
+    fun toEngine(d: Int): Int {
+        for (s in segs) {
+            if (d < s.dStart + s.dLen) {
+                val k = d - s.dStart
+                return when {
+                    !s.atomic -> s.eStart + k
+                    k * 2 <= s.dLen -> s.eStart
+                    else -> s.eStart + s.eLen
                 }
-                isOp(tok) -> BasicText(tok, m.padding(horizontal = 3.dp), style.copy(color = Palette.TapeYellow))
-                else -> BasicText(tok, m, style)
             }
         }
+        return segs.lastOrNull()?.let { it.eStart + it.eLen } ?: 0
     }
+}
+
+private fun buildExpr(text: String, style: TextStyle): Expr {
+    val segs = mutableListOf<Seg>()
+    val inline = mutableMapOf<String, InlineTextContent>()
+    var e = 0
+    val annotated = buildAnnotatedString {
+        tokenize(text).forEachIndexed { i, tok ->
+            val d = length
+            when {
+                isFractionTok(tok) -> {
+                    val (n, den) = tok.removePrefix("-").split(FRAC_SLASH)
+                    if (tok.startsWith("-")) append("-")
+                    val id = "f$i"
+                    appendInlineContent(id)
+                    val w = maxOf(n.length, den.length) * 0.34f + 0.55f
+                    inline[id] = InlineTextContent(Placeholder(w.em, 1.5.em, PlaceholderVerticalAlign.Center)) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Fraction(n, den, style) }
+                    }
+                }
+                isOp(tok) -> withStyle(SpanStyle(color = Palette.TapeYellow)) { append(" $tok ") }
+                else -> append(tok)
+            }
+            segs += Seg(d, length - d, e, tok.length, atomic = isFractionTok(tok) || isOp(tok))
+            e += tok.length
+        }
+    }
+    return Expr(annotated, inline, segs)
+}
+
+/** The expression with a blinking cursor; tap to place it, drag sideways to slide it. */
+@Composable
+private fun ExprEditor(state: CalcState, onCursor: (Int) -> Unit) {
+    val style = exprStyle(Palette.DisplayFg, FontWeight.Medium)
+    val expr = remember(state.text) { buildExpr(state.text, style) }
+    var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    val blink by rememberInfiniteTransition(label = "cursor").animateFloat(
+        0f, 1f, infiniteRepeatable(tween(1000, easing = LinearEasing)), label = "blink",
+    )
+    val place = { p: Offset -> layout?.let { onCursor(expr.toEngine(it.getOffsetForPosition(p))) }; Unit }
+
+    BasicText(
+        expr.text,
+        Modifier
+            .fillMaxWidth()
+            .pointerInput(expr) { detectTapGestures { place(it) } }
+            .pointerInput(expr) { detectHorizontalDragGestures { change, _ -> place(change.position) } }
+            .drawWithContent {
+                drawContent()
+                val l = layout
+                if (l != null && !state.hasResult && blink < 0.5f) {
+                    val r = l.getCursorRect(expr.toDisplay(state.cursor))
+                    drawRect(Palette.TapeYellow, Offset(r.left, r.top), Size(2.dp.toPx(), r.height))
+                }
+            },
+        style,
+        onTextLayout = { layout = it },
+        inlineContent = expr.inline,
+    )
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AnswerExpr(value: Double) {
     val f = toNearest16Plus(value)
-    val style = exprStyle(Palette.TapeYellow, FontWeight.Bold)
+    val style = exprStyle(Palette.TapeYellow, FontWeight.Bold).copy(fontSize = AnswerSize)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
         val m = Modifier.align(Alignment.CenterVertically)
         if (f.sign < 0) BasicText("−", m, style)
@@ -242,24 +331,24 @@ private fun Fraction(num: String, den: String, base: TextStyle, modifier: Modifi
     }
 }
 
+/** Where the exact answer sits between the two nearest 1/16 ticks. */
 @Composable
 private fun GaugeView(low: String, high: String, position: Float) {
-    Column(Modifier.width(52.dp)) {
-        Canvas(Modifier.fillMaxWidth().height(20.dp)) {
+    Column(Modifier.width(160.dp)) {
+        Canvas(Modifier.fillMaxWidth().height(30.dp)) {
             val w = size.width
-            drawRect(Palette.Line, Offset(0f, 9.dp.toPx()), Size(w, 2.dp.toPx()))
-            val tickW = 1.5.dp.toPx()
-            drawRect(Palette.DisplayDim, Offset(0f, 3.dp.toPx()), Size(tickW, 13.dp.toPx()))
-            drawRect(Palette.DisplayDim, Offset(w - tickW, 3.dp.toPx()), Size(tickW, 13.dp.toPx()))
-            val mw = 2.dp.toPx()
-            drawRect(
-                Palette.TapeYellow,
-                Offset((position * w - mw / 2).coerceIn(0f, w - mw), 1.dp.toPx()),
-                Size(mw, 17.dp.toPx()),
-            )
+            val h = size.height
+            drawRect(Palette.Line, Offset(0f, h / 2 - 1.5.dp.toPx()), Size(w, 3.dp.toPx()))
+            val tickW = 2.dp.toPx()
+            drawRect(Palette.DisplayDim, Offset(0f, h * 0.15f), Size(tickW, h * 0.7f))
+            drawRect(Palette.DisplayDim, Offset(w - tickW, h * 0.15f), Size(tickW, h * 0.7f))
+            // 1/32 mark: an answer near here shows "+"
+            drawRect(Palette.DisplayDim.copy(alpha = 0.6f), Offset((w - tickW) / 2, h * 0.3f), Size(tickW, h * 0.4f))
+            val mw = 3.dp.toPx()
+            drawRect(Palette.TapeYellow, Offset((position * w - mw / 2).coerceIn(0f, w - mw), 0f), Size(mw, h))
         }
-        Row(Modifier.fillMaxWidth().padding(top = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            val s = TextStyle(Palette.DisplayDim, 9.sp, fontFamily = JetBrainsMono)
+        Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            val s = TextStyle(Palette.DisplayDim, 13.sp, fontFamily = JetBrainsMono)
             BasicText(low, style = s)
             BasicText(high, style = s)
         }
