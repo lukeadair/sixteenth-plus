@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.ShopCalc" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/housing</item>
+        <item name="android:statusBarColor">@color/housing</item>
+        <item name="android:navigationBarColor">@color/housing</item>
+    </style>
+</resources>
