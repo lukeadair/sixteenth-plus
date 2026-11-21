@@ -59,7 +59,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import com.sixteenthplus.calc.isNumTok
+import com.sixteenthplus.calc.isPlainNum
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
@@ -111,8 +114,8 @@ fun ShopCalcScreen() {
         ) {
             Brand()
             Display(state, onCursor = { c -> update { moveCursor(c) } }, Modifier.weight(1f).fillMaxWidth())
-            TapeRow(onDenom = { d -> update { denom(d) } })
             Keypad(update)
+            TapeRow(onDenom = { d -> update { denom(d) } }) // bottom: easiest thumb reach, next to a b/c
         }
     }
 }
@@ -208,7 +211,12 @@ private fun exprStyle(color: Color, weight: FontWeight) =
 private class Seg(val dStart: Int, val dLen: Int, val eStart: Int, val eLen: Int, val atomic: Boolean)
 
 /** The expression as one annotated string (fractions are inline stacked boxes) plus cursor mapping. */
-private class Expr(val text: AnnotatedString, val inline: Map<String, InlineTextContent>, private val segs: List<Seg>) {
+private class Expr(
+    val text: AnnotatedString,
+    val inline: Map<String, InlineTextContent>,
+    private val segs: List<Seg>,
+    val pendingActive: Boolean, // cursor is in a pending fraction, which draws its own caret
+) {
     fun toDisplay(e: Int): Int {
         for (s in segs) {
             if (e <= s.eStart) return s.dStart
@@ -232,14 +240,33 @@ private class Expr(val text: AnnotatedString, val inline: Map<String, InlineText
     }
 }
 
-private fun buildExpr(text: String, style: TextStyle): Expr {
+/**
+ * A space starts the fraction part of a mixed number, so what follows it is shown as a
+ * pending fraction with dashed boxes until a denominator key turns it into a real one.
+ * [caretOn] blinks the caret inside the pending fraction when the cursor is there.
+ */
+private fun buildExpr(text: String, cursor: Int, style: TextStyle, caretOn: () -> Boolean): Expr {
     val segs = mutableListOf<Seg>()
     val inline = mutableMapOf<String, InlineTextContent>()
+    var pendingActive = false
     var e = 0
+    val toks = tokenize(text)
     val annotated = buildAnnotatedString {
-        tokenize(text).forEachIndexed { i, tok ->
+        fun pending(id: String, num: String?, active: Boolean) {
+            appendInlineContent(id)
+            val w = maxOf(num?.length ?: 0, 2) * 0.34f + 0.55f
+            inline[id] = InlineTextContent(Placeholder(w.em, 1.5.em, PlaceholderVerticalAlign.Center)) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Fraction(num, null, style, cursor = { active && caretOn() })
+                }
+            }
+            if (active) pendingActive = true
+        }
+        toks.forEachIndexed { i, tok ->
             val d = length
+            val numerator = toks.getOrNull(i - 1) == " " && isPlainNum(tok)
             when {
+                numerator -> pending("p$i", tok, cursor in e + 1..e + tok.length)
                 isFractionTok(tok) -> {
                     val (n, den) = tok.removePrefix("-").split(FRAC_SLASH)
                     if (tok.startsWith("-")) append("-")
@@ -251,24 +278,33 @@ private fun buildExpr(text: String, style: TextStyle): Expr {
                     }
                 }
                 isOp(tok) -> withStyle(SpanStyle(color = Palette.TapeYellow)) { append(" $tok ") }
+                // a full mono space is ~0.6em; shrink it so "7 3⁄4" reads as one mixed number
+                tok == " " -> withStyle(SpanStyle(fontSize = 0.3.em)) { append(tok) }
                 else -> append(tok)
             }
-            segs += Seg(d, length - d, e, tok.length, atomic = isFractionTok(tok) || isOp(tok))
+            segs += Seg(d, length - d, e, tok.length, atomic = numerator || isFractionTok(tok) || isOp(tok))
             e += tok.length
+            if (tok == " " && !isNumTok(toks.getOrNull(i + 1))) { // nothing typed after the space yet
+                val d2 = length
+                pending("e$i", null, cursor == e)
+                segs += Seg(d2, length - d2, e, 0, atomic = true)
+            }
         }
     }
-    return Expr(annotated, inline, segs)
+    return Expr(annotated, inline, segs, pendingActive)
 }
 
 /** The expression with a blinking cursor; tap to place it, drag sideways to slide it. */
 @Composable
 private fun ExprEditor(state: CalcState, onCursor: (Int) -> Unit) {
     val style = exprStyle(Palette.DisplayFg, FontWeight.Medium)
-    val expr = remember(state.text) { buildExpr(state.text, style) }
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     val blink by rememberInfiniteTransition(label = "cursor").animateFloat(
         0f, 1f, infiniteRepeatable(tween(1000, easing = LinearEasing)), label = "blink",
     )
+    val expr = remember(state.text, state.cursor, state.hasResult) {
+        buildExpr(state.text, state.cursor, style) { !state.hasResult && blink < 0.5f }
+    }
     val place = { p: Offset -> layout?.let { onCursor(expr.toEngine(it.getOffsetForPosition(p))) }; Unit }
 
     BasicText(
@@ -280,7 +316,7 @@ private fun ExprEditor(state: CalcState, onCursor: (Int) -> Unit) {
             .drawWithContent {
                 drawContent()
                 val l = layout
-                if (l != null && !state.hasResult && blink < 0.5f) {
+                if (l != null && !state.hasResult && !expr.pendingActive && blink < 0.5f) {
                     val r = l.getCursorRect(expr.toDisplay(state.cursor))
                     drawRect(Palette.TapeYellow, Offset(r.left, r.top), Size(2.dp.toPx(), r.height))
                 }
@@ -309,26 +345,64 @@ private fun AnswerExpr(value: Double) {
     }
 }
 
+/** Stacked fraction. A null part is an empty dashed box; [cursor] blinks a caret in the numerator. */
 @Composable
-private fun Fraction(num: String, den: String, base: TextStyle, modifier: Modifier = Modifier) {
+private fun Fraction(
+    num: String?,
+    den: String?,
+    base: TextStyle,
+    modifier: Modifier = Modifier,
+    cursor: () -> Boolean = { false },
+) {
     val small = base.copy(fontSize = base.fontSize * 0.56f, lineHeight = base.fontSize * 0.6f)
     val color = base.color
     Column(
         modifier.padding(horizontal = 3.dp).offset(y = (-2).dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        BasicText(
-            num,
+        Slot(
+            num, small, cursor,
             Modifier
                 .drawBehind {
                     val h = 2.dp.toPx()
                     drawRect(color, Offset(0f, size.height - h), Size(size.width, h))
                 }
                 .padding(start = 4.dp, end = 4.dp, bottom = 3.dp),
-            small,
         )
-        BasicText(den, Modifier.padding(start = 4.dp, end = 4.dp, top = 2.dp), small)
+        Slot(den, small, { false }, Modifier.padding(start = 4.dp, end = 4.dp, top = 2.dp))
     }
+}
+
+@Composable
+private fun Slot(text: String?, style: TextStyle, cursor: () -> Boolean, modifier: Modifier) {
+    val empty = text == null
+    val caret = Modifier.drawWithContent {
+        drawContent()
+        if (cursor()) {
+            val w = 1.5.dp.toPx()
+            val x = if (empty) 3.dp.toPx() else size.width - w
+            drawRect(Palette.TapeYellow, Offset(x, 0f), Size(w, size.height))
+        }
+    }
+    if (text != null) {
+        BasicText(text, modifier.then(caret), style)
+        return
+    }
+    val h = with(LocalDensity.current) { style.fontSize.toDp() }
+    Box(
+        modifier
+            .then(caret)
+            .width(h * 0.9f)
+            .height(h)
+            .drawBehind {
+                val sw = 1.dp.toPx()
+                drawRoundRect(
+                    Palette.TapeYellowDim,
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()),
+                    style = Stroke(sw, pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 2.dp.toPx()))),
+                )
+            },
+    )
 }
 
 /** Where the exact answer sits between the two nearest 1/16 ticks. */
@@ -545,7 +619,7 @@ private fun Keypad(update: (CalcState.() -> CalcState) -> Unit) {
             Key("+", KeyKind.Op) { update { op("+") } }
         }
         KeyRow {
-            Key("SPACE", KeyKind.Space, span = 2) { update { space() } }
+            Key("a b/c", KeyKind.Space, span = 2) { update { space() } } // starts the fraction of a mixed number
             Key("=", KeyKind.Equals, span = 2) { update { equals() } }
         }
     }
