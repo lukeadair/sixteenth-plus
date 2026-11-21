@@ -19,6 +19,7 @@ object Palette {
     val TapeYellowDim = Color(0xFFB9852B)
     val KeyFg = Color(0xFFEDE7DA)
     val KeyOpBg = Color(0xFF3D372B)
+    val KeyOpLip = Color(0xFF5A6355) // muted grey-green under operator keys
     val Danger = Color(0xFFC0553C)
     val Line = Color(0xFF3A362D)
 }

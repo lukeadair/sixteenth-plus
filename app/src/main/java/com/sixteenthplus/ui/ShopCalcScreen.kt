@@ -57,7 +57,11 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -78,6 +82,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextGeometricTransform
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
@@ -453,18 +458,15 @@ private fun PressKey(
     enabled: Boolean = true,
     face: Color,
     lip: Color,
-    lipHeight: Dp = 3.dp,
     radius: Dp = 8.dp,
-    outline: Color? = null,
-    dashed: Boolean = false,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val view = LocalView.current
     val shape = RoundedCornerShape(radius)
-    val drop = if (pressed && lipHeight > 1.dp) 2.dp else 0.dp
-    val lipNow = if (pressed && lipHeight > 1.dp) 1.dp else lipHeight
+    val drop = if (pressed) 2.dp else 0.dp
+    val lipNow = if (pressed) 1.dp else 3.dp
 
     Box(
         modifier
@@ -482,24 +484,7 @@ private fun PressKey(
                 .background(lip)
                 .padding(bottom = lipNow)
                 .clip(shape)
-                .background(face)
-                .then(
-                    if (outline == null) Modifier
-                    else Modifier.drawBehind {
-                        val sw = 1.dp.toPx()
-                        val r = radius.toPx()
-                        drawRoundRect(
-                            outline,
-                            topLeft = Offset(sw / 2, sw / 2),
-                            size = Size(size.width - sw, size.height - sw),
-                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(r, r),
-                            style = Stroke(
-                                sw,
-                                pathEffect = if (dashed) PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx())) else null,
-                            ),
-                        )
-                    }
-                ),
+                .background(face),
             contentAlignment = Alignment.Center,
             content = content,
         )
@@ -555,24 +540,17 @@ private fun TapeRow(onDenom: (Int) -> Unit) {
     }
 }
 
-/** Each key type's look. Flat keys (Func, Space) get a thin lip and an outline. */
+/** Each key type's look. */
 private enum class KeyKind(
     val face: Color,
     val fg: Color,
     val size: TextUnit,
     val weight: FontWeight,
     val lip: Color = Palette.Line,
-    val flat: Boolean = false,
-    val spacing: TextUnit = 0.sp,
-    val family: FontFamily = Oswald,
 ) {
     Num(Palette.PanelRaised, Palette.KeyFg, 22.sp, FontWeight.Medium),
-    Op(Palette.KeyOpBg, Palette.TapeYellow, 32.sp, FontWeight.SemiBold),
-    Paren(Palette.KeyOpBg, Palette.KeyFg, 19.sp, FontWeight.SemiBold),
-    Clear(Palette.PanelRaised, Palette.Danger, 22.sp, FontWeight.Medium),
-    Func(Palette.Housing, Palette.DisplayDim, 18.sp, FontWeight.Normal, flat = true, spacing = 1.sp, family = FontFamily.Default),
-    Space(Palette.Panel, Palette.DisplayDim, 22.sp, FontWeight.Medium, flat = true), // draws an icon, text style unused
-    Equals(Palette.TapeYellow, Palette.Housing, 34.sp, FontWeight.Bold, lip = Palette.TapeYellowDim),
+    Op(Palette.KeyOpBg, Palette.TapeYellow, 40.sp, FontWeight.SemiBold, lip = Palette.KeyOpLip),
+    Equals(Palette.TapeYellow, Palette.Housing, 44.sp, FontWeight.Bold, lip = Palette.TapeYellowDim),
 }
 
 @Composable
@@ -593,12 +571,9 @@ private fun RowScope.Key(
         enabled = enabled,
         face = kind.face,
         lip = kind.lip,
-        lipHeight = if (kind.flat) 1.dp else 3.dp,
-        outline = if (kind.flat) Palette.Line else null,
-        dashed = kind == KeyKind.Space,
     ) {
         if (icon != null) return@PressKey icon()
-        val style = TextStyle(kind.fg, kind.size, kind.weight, fontFamily = kind.family, letterSpacing = kind.spacing)
+        val style = TextStyle(kind.fg, kind.size, kind.weight, fontFamily = Oswald)
         BasicText(label, style = style.copy(textAlign = TextAlign.Center))
     }
 }
@@ -634,6 +609,55 @@ private fun FracBox(lit: Boolean) {
     )
 }
 
+/** A drawn key icon, hidden from screen readers because the key carries the spoken name. */
+@Composable
+private fun KeyIcon(width: Dp, height: Dp, draw: DrawScope.() -> Unit) =
+    // 1dp lower so it sits level with the text glyphs on the neighbouring keys
+    Canvas(Modifier.clearAndSetSemantics {}.offset(y = 1.dp).width(width).height(height), onDraw = draw)
+
+/** Backspace outline with rounded corners, joins and caps (the ⌫ font glyph is small and sharp). */
+@Composable
+private fun BackspaceIcon() = KeyIcon(27.dp, 20.dp) { // same height as ClearIcon
+    val sw = 3.dp.toPx() // same line and corner radius as ClearIcon
+    val (w, h) = size
+    val r = 5.dp.toPx() // corner radius on the right side
+    val tip = w * 0.32f // where the pointed left end meets the body
+    val s = sw / 2 + 1.dp.toPx() // keep the stroke inside the canvas, with 1dp to spare
+    val body = Path().apply {
+        moveTo(tip, s)
+        lineTo(w - s - r, s)
+        quadraticTo(w - s, s, w - s, s + r)
+        lineTo(w - s, h - s - r)
+        quadraticTo(w - s, h - s, w - s - r, h - s)
+        lineTo(tip, h - s)
+        lineTo(s, h / 2)
+        close()
+    }
+    drawPath(body, Palette.Danger, style = Stroke(sw, cap = StrokeCap.Round, join = StrokeJoin.Round))
+    val cx = tip + (w - tip) * 0.34f // left of the body's middle, which looks centred next to the point
+    val d = h * 0.15f // half the ×'s width
+    drawLine(Palette.Danger, Offset(cx - d, h / 2 - d), Offset(cx + d, h / 2 + d), sw, StrokeCap.Round)
+    drawLine(Palette.Danger, Offset(cx - d, h / 2 + d), Offset(cx + d, h / 2 - d), sw, StrokeCap.Round)
+}
+
+/** A blocky C with an even line all the way round (Oswald's C thins out at the bottom). */
+@Composable
+private fun ClearIcon() = KeyIcon(16.dp, 20.dp) {
+    val sw = 3.dp.toPx()
+    val (w, h) = size
+    val r = 5.dp.toPx() // corner radius on the left side
+    val s = sw / 2 + 1.dp.toPx()
+    val c = Path().apply {
+        moveTo(w - s, s)
+        lineTo(s + r, s)
+        quadraticTo(s, s, s, s + r)
+        lineTo(s, h - s - r)
+        quadraticTo(s, h - s, s + r, h - s)
+        lineTo(w - s, h - s)
+    }
+    drawPath(c, Palette.Danger, style = Stroke(sw, cap = StrokeCap.Butt, join = StrokeJoin.Round))
+}
+
 @Composable
 private fun KeyRow(content: @Composable RowScope.() -> Unit) {
     Row(Modifier.fillMaxWidth().height(62.dp), horizontalArrangement = Arrangement.spacedBy(9.dp), content = content)
@@ -643,10 +667,10 @@ private fun KeyRow(content: @Composable RowScope.() -> Unit) {
 private fun Keypad(update: (CalcState.() -> CalcState) -> Unit, state: CalcState) {
     Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
         KeyRow {
-            Key("(", KeyKind.Paren) { update { lparen() } }
-            Key(")", KeyKind.Paren) { update { rparen() } }
-            Key("C", KeyKind.Clear) { update { clear() } }
-            Key("⌫", KeyKind.Func) { update { backspace() } }
+            Key("(", KeyKind.Num) { update { lparen() } }
+            Key(")", KeyKind.Num) { update { rparen() } }
+            Key("Clear", KeyKind.Num, icon = { ClearIcon() }) { update { clear() } }
+            Key("Backspace", KeyKind.Num, icon = { BackspaceIcon() }) { update { backspace() } }
         }
         listOf(
             listOf("7", "8", "9") to "÷",
@@ -668,8 +692,11 @@ private fun Keypad(update: (CalcState.() -> CalcState) -> Unit, state: CalcState
             // starts the fraction of a mixed number, then moves to its denominator
             val enabled = state.fracKeyEnabled
             val icon = @Composable { FracKeyIcon(enabled, state.fracKeyHasWhole, state.fracKeyOpensDenominator) }
-            Key("Fraction", KeyKind.Space, span = 2, enabled = enabled, icon = icon) { update { space() } }
-            Key("=", KeyKind.Equals, span = 2) { update { equals() } }
+            Key("Fraction", KeyKind.Num, span = 2, enabled = enabled, icon = icon) { update { space() } }
+            // the font's "=" is short: stretch it sideways for longer bars, and lift it 1dp to look centred
+            val eq = KeyKind.Equals
+            val eqStyle = TextStyle(eq.fg, eq.size, eq.weight, fontFamily = Oswald, textGeometricTransform = TextGeometricTransform(scaleX = 1.6f))
+            Key("=", eq, span = 2, icon = { BasicText("=", Modifier.offset(y = (-1).dp), eqStyle) }) { update { equals() } }
         }
     }
 }
