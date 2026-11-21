@@ -17,3 +17,6 @@ Open the folder in Android Studio, or from a terminal:
     export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
     ./gradlew testDebugUnitTest assembleDebug
     adb install -r app/build/outputs/apk/debug/app-debug.apk
+
+## License
+MIT, see [LICENSE](LICENSE). The bundled Oswald and JetBrains Mono fonts are under the SIL Open Font License (see `third_party/`).
