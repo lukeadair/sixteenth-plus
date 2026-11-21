@@ -183,17 +183,20 @@ data class CalcState(
     private fun startFresh() =
         if (hasResult) copy(tokens = emptyList(), entering = false, hasResult = false) else this
 
+    /** Start a new number token; "(2+3)5" means "(2+3)×5", same as lparen(). */
+    private fun startNumber(t: String) =
+        copy(tokens = tokens + (if (last == ")") listOf("×", t) else listOf(t)), entering = true)
+
     fun digit(d: String): CalcState {
         val s = startFresh()
-        return if (s.entering) s.copy(tokens = s.replaceLast(s.last + d))
-        else s.copy(tokens = s.tokens + d, entering = true)
+        return if (s.entering) s.copy(tokens = s.replaceLast(s.last + d)) else s.startNumber(d)
     }
 
     fun dot(): CalcState {
         val s = startFresh()
         return if (s.entering) {
             if (s.last!!.contains('.')) s else s.copy(tokens = s.replaceLast(s.last + "."))
-        } else s.copy(tokens = s.tokens + "0.", entering = true)
+        } else s.startNumber("0.")
     }
 
     fun op(op: String): CalcState {

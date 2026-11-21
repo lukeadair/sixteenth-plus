@@ -53,6 +53,11 @@ class CalcEngineTest {
         assertEquals(10.0, result("2 ( 3 + 2 ="), 1e-9) // auto-closes paren
     }
 
+    @Test fun implicitTimesAfterParen() {
+        assertEquals(25.0, result("( 2 + 3 ) 5 ="), 1e-9)
+        assertEquals(2.5, result("( 2 + 3 ) . 5 ="), 1e-9)
+    }
+
     @Test fun continueFromResult() {
         val s = press("10 ÷ 4 =").op("+").digit("1").equals()
         assertEquals(3.5, s.lastResult!!, 1e-9)

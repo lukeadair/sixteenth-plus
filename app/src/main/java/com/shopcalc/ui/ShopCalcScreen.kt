@@ -56,7 +56,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.shopcalc.calc.CalcState
@@ -123,7 +122,6 @@ private fun Brand() {
 
 private val ExprSize = 28.sp
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Display(state: CalcState, modifier: Modifier) {
     val shape = RoundedCornerShape(10.dp)
@@ -396,11 +394,7 @@ private fun RowScope.Key(
         KeyKind.Space -> Palette.Panel
         else -> Palette.PanelRaised
     }
-    val lip = when (kind) {
-        KeyKind.Equals -> Palette.TapeYellowDim
-        KeyKind.Func, KeyKind.Space -> Palette.Line
-        else -> Palette.Line
-    }
+    val lip = if (kind == KeyKind.Equals) Palette.TapeYellowDim else Palette.Line
     val fg = when (kind) {
         KeyKind.Op -> Palette.TapeYellow
         KeyKind.Equals -> Palette.Housing
@@ -426,13 +420,9 @@ private fun RowScope.Key(
         outline = when (kind) { KeyKind.Func, KeyKind.Space -> Palette.Line; else -> null },
         dashed = kind == KeyKind.Space,
     ) {
-        KeyLabel(label, fg, size, weight, spacing, if (kind == KeyKind.Func) FontFamily.Default else Oswald)
+        val family = if (kind == KeyKind.Func) FontFamily.Default else Oswald
+        BasicText(label, style = TextStyle(fg, size, weight, fontFamily = family, letterSpacing = spacing, textAlign = TextAlign.Center))
     }
-}
-
-@Composable
-private fun KeyLabel(text: String, color: Color, size: TextUnit, weight: FontWeight, spacing: TextUnit, family: FontFamily) {
-    BasicText(text, style = TextStyle(color, size, weight, fontFamily = family, letterSpacing = spacing, textAlign = TextAlign.Center))
 }
 
 @Composable
@@ -465,7 +455,7 @@ private fun Keypad(update: (CalcState.() -> CalcState) -> Unit) {
             Key(".", KeyKind.Num) { update { dot() } }
             Key("+", KeyKind.Op) { update { op("+") } }
         }
-        Row(Modifier.fillMaxWidth().height(62.dp), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+        KeyRow {
             Key("SPACE", KeyKind.Space, span = 2) { update { space() } }
             Key("=", KeyKind.Equals, span = 2) { update { equals() } }
         }
