@@ -60,6 +60,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -127,13 +128,19 @@ fun ShopCalcScreen() {
 
 @Composable
 private fun Brand() {
+    val context = LocalContext.current
+    val version = remember { context.packageManager.getPackageInfo(context.packageName, 0).versionName }
+    var showVersion by rememberSaveable { mutableStateOf(false) }
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 4.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.Bottom,
     ) {
         BasicText(
-            "SIXTEENTH+",
+            if (showVersion) "SIXTEENTH+  v$version" else "SIXTEENTH+",
+            Modifier.clickable(interactionSource = null, indication = null, onClickLabel = "Toggle version") {
+                showVersion = !showVersion
+            },
             style = TextStyle(Palette.DisplayDim, 12.sp, FontWeight.SemiBold, fontFamily = Oswald, letterSpacing = 3.sp),
         )
         BasicText(
