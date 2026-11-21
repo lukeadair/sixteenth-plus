@@ -96,7 +96,7 @@ private val CalcStateSaver = listSaver<CalcState, Any?>(
 @Composable
 fun ShopCalcScreen() {
     var state by rememberSaveable(stateSaver = CalcStateSaver) { mutableStateOf(CalcState()) }
-    val update: (CalcState.() -> CalcState) -> Unit = { f -> state = state.f() }
+    val update: (CalcState.() -> CalcState) -> Unit = { f -> state = state.copy(error = null).f() }
 
     Box(
         Modifier
@@ -188,6 +188,7 @@ private fun Display(state: CalcState, onCursor: (Int) -> Unit, modifier: Modifie
                 ExprEditor(state, onCursor)
             }
         }
+        state.error?.let { BasicText(it, style = TextStyle(Palette.Danger, 13.sp, fontFamily = JetBrainsMono)) }
         if (result != null) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
                 BasicText(
@@ -257,7 +258,7 @@ private fun buildExpr(text: String, cursor: Int, style: TextStyle, caretOn: () -
             val w = maxOf(num?.length ?: 0, 2) * 0.34f + 0.55f
             inline[id] = InlineTextContent(Placeholder(w.em, 1.5.em, PlaceholderVerticalAlign.Center)) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Fraction(num, null, style, cursor = { active && caretOn() })
+                    Fraction(num, null, style, numCaret = { active && caretOn() })
                 }
             }
             if (active) pendingActive = true
@@ -272,9 +273,14 @@ private fun buildExpr(text: String, cursor: Int, style: TextStyle, caretOn: () -
                     if (tok.startsWith("-")) append("-")
                     val id = "f$i"
                     appendInlineContent(id)
-                    val w = maxOf(n.length, den.length) * 0.34f + 0.55f
+                    val w = maxOf(n.length, den.length.coerceAtLeast(if (den.isEmpty()) 2 else 1)) * 0.34f + 0.55f
+                    // cursor at the fraction's end: digits go to its denominator, so the caret shows there
+                    val active = cursor == e + tok.length
+                    if (active) pendingActive = true
                     inline[id] = InlineTextContent(Placeholder(w.em, 1.5.em, PlaceholderVerticalAlign.Center)) {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Fraction(n, den, style) }
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Fraction(n, den.ifEmpty { null }, style, denCaret = { active && caretOn() })
+                        }
                     }
                 }
                 isOp(tok) -> withStyle(SpanStyle(color = Palette.TapeYellow)) { append(" $tok ") }
@@ -352,7 +358,8 @@ private fun Fraction(
     den: String?,
     base: TextStyle,
     modifier: Modifier = Modifier,
-    cursor: () -> Boolean = { false },
+    numCaret: () -> Boolean = { false },
+    denCaret: () -> Boolean = { false },
 ) {
     val small = base.copy(fontSize = base.fontSize * 0.56f, lineHeight = base.fontSize * 0.6f)
     val color = base.color
@@ -361,7 +368,7 @@ private fun Fraction(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Slot(
-            num, small, cursor,
+            num, small, numCaret,
             Modifier
                 .drawBehind {
                     val h = 2.dp.toPx()
@@ -369,7 +376,7 @@ private fun Fraction(
                 }
                 .padding(start = 4.dp, end = 4.dp, bottom = 3.dp),
         )
-        Slot(den, small, { false }, Modifier.padding(start = 4.dp, end = 4.dp, top = 2.dp))
+        Slot(den, small, denCaret, Modifier.padding(start = 4.dp, end = 4.dp, top = 2.dp))
     }
 }
 

@@ -25,7 +25,8 @@ fun isFractionTok(t: String?) = t != null && t.contains(FRAC_SLASH)
 fun isNumTok(t: String?) = t != null && t != " " && t !in OPS && t != "(" && t != ")"
 fun isPlainNum(t: String?) = isNumTok(t) && !isFractionTok(t)
 
-private val TOKEN = Regex("-?[0-9.]*$FRAC_SLASH[0-9]+|-?[0-9.]+|-|[+−×÷() ]")
+// A fraction's denominator may be empty ("3⁄") while a custom one is being typed.
+private val TOKEN = Regex("-?[0-9.]*$FRAC_SLASH[0-9]*|-?[0-9.]+|-|[+−×÷() ]")
 
 /** Split expression text into tokens. Tokens are contiguous: their lengths sum to text.length. */
 fun tokenize(text: String): List<String> = TOKEN.findAll(text).map { it.value }.toList()
@@ -183,6 +184,11 @@ fun gaugeFor(value: Double): Gauge? {
     return Gauge(sixteenthLabel(lower16, whole), sixteenthLabel(lower16 + 1, whole), position)
 }
 
+/** An unfinished fraction: "7 3⁄" (empty denominator), "7 3" or "7 " (nothing picked after a b/c). */
+fun missingDenominator(tokens: List<String>) = tokens.withIndex().any { (i, t) ->
+    (isFractionTok(t) && t.endsWith(FRAC_SLASH)) || (t == " " && !isFractionTok(tokens.getOrNull(i + 1)))
+}
+
 /** Keep the cursor in range and out of the middle of a fraction token (fractions are atomic). */
 private fun snap(text: String, c: Int): Int {
     val cc = c.coerceIn(0, text.length)
@@ -204,6 +210,7 @@ data class CalcState(
     val cursor: Int = 0,
     val hasResult: Boolean = false,  // display shows an evaluated answer
     val lastResult: Double? = null,  // exact (unrounded) last answer
+    val error: String? = null,       // short message from "=", cleared by the UI on the next key
 ) {
     val tokens: List<String> get() = tokenize(text)
     private val before get() = text.substring(0, cursor)
@@ -214,22 +221,21 @@ data class CalcState(
 
     private fun edit(t: String, c: Int) = copy(text = t, cursor = snap(t, c))
     private fun insert(s: String) = edit(before + s + after, cursor + s.length)
-    private fun touchesFraction() = isFractionTok(prev) || isFractionTok(next)
-
     private fun startFresh() = if (hasResult) copy(text = "", cursor = 0, hasResult = false) else this
 
     fun moveCursor(to: Int) = copy(cursor = snap(text, to), hasResult = false)
 
+    /** Right after a fraction, digits extend its denominator (custom denominators like 3/32). */
     fun digit(d: String): CalcState {
         val s = startFresh()
-        return if (s.touchesFraction()) s else s.insert(d)
+        return if (isFractionTok(s.next)) s else s.insert(d)
     }
 
     fun dot(): CalcState {
         val s = startFresh()
         val p = s.prev.takeIf(::isPlainNum) ?: ""
         val n = s.next?.takeIf { isPlainNum(it) && !it.startsWith("-") } ?: ""
-        if (s.touchesFraction() || '.' in p + n) return s
+        if (isFractionTok(s.prev) || isFractionTok(s.next) || '.' in p + n) return s
         return s.insert(if (p.any(Char::isDigit)) "." else "0.")
     }
 
@@ -248,10 +254,14 @@ data class CalcState(
         }
     }
 
+    /** The "a b/c" key: first press starts the fraction part ("7 "), second opens its denominator ("7 3⁄"). */
     fun space(): CalcState {
         val s = startFresh()
-        val p = s.prev
-        if (p == null || p == " " || p == "(" || p == "-" || isOp(p) || s.next == " ") return s
+        val toks = tokenize(s.before)
+        val p = toks.lastOrNull()
+        val inNumerator = isPlainNum(p) && p!!.any(Char::isDigit) && toks.getOrNull(toks.size - 2) == " "
+        if (inNumerator && !isNumTok(s.next)) return s.insert(FRAC_SLASH)
+        if (p == null || p == " " || p == "(" || p == "-" || isOp(p) || isFractionTok(p) || s.next == " ") return s
         return s.insert(" ")
     }
 
@@ -267,9 +277,8 @@ data class CalcState(
 
     fun backspace(): CalcState {
         if (hasResult) return copy(hasResult = false) // hide the answer, back to editing
-        val p = prev ?: return this
-        val n = if (isPlainNum(p)) 1 else p.length // fractions, ops, parens go whole
-        return edit(before.dropLast(n) + after, cursor - n)
+        if (cursor == 0) return this
+        return edit(before.dropLast(1) + after, cursor - 1) // one char, so a denominator can be fixed
     }
 
     fun clear() = CalcState()
@@ -294,11 +303,17 @@ data class CalcState(
 
     fun denom(d: Int): CalcState {
         val p = prev
-        if (hasResult || !isPlainNum(p) || p!!.none(Char::isDigit) || isNumTok(next)) return this
+        if (hasResult || isNumTok(next)) return this
+        if (isFractionTok(p)) { // replace the denominator (typed or preset)
+            val old = p!!.substringAfter(FRAC_SLASH)
+            return edit(before.dropLast(old.length) + d + after, cursor - old.length + d.toString().length)
+        }
+        if (!isPlainNum(p) || p!!.none(Char::isDigit)) return this
         return insert("$FRAC_SLASH$d")
     }
 
     fun equals(): CalcState {
+        if (missingDenominator(tokens)) return copy(error = "Enter a denominator")
         val v = evaluateTokens(tokens) ?: return this
         if (!v.isFinite()) return this
         return copy(lastResult = v, hasResult = true)

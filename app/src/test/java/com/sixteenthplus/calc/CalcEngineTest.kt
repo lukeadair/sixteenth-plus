@@ -114,11 +114,30 @@ class CalcEngineTest {
         assertEquals("1+3", press("12 + 3").moveCursor(2).backspace().text)
     }
 
-    @Test fun fractionIsAtomic() {
+    @Test fun fractionEditing() {
         val s = press("3 /16 + 1")
         assertEquals(4, s.moveCursor(2).cursor) // inside "3⁄16" snaps to its end
-        assertEquals("+1", s.moveCursor(4).backspace().text)
-        assertEquals(s.text, s.moveCursor(4).digit("5").text) // no digits glued onto a fraction
+        assertEquals("3${FRAC_SLASH}1+1", s.moveCursor(4).backspace().text) // one denominator digit
+        assertEquals("3${FRAC_SLASH}165+1", s.moveCursor(4).digit("5").text) // extends the denominator
+        assertEquals(s.text, s.moveCursor(0).digit("5").text) // no digits glued onto a numerator
+    }
+
+    @Test fun customDenominator() {
+        // a b/c twice opens the denominator: 7 3/32
+        assertEquals(7.09375, result("7 sp 3 sp 32 ="), 1e-9)
+        // a preset key replaces whatever denominator is there
+        assertEquals(7.375, result("7 sp 3 sp 32 /8 ="), 1e-9)
+        // an empty denominator can't be evaluated
+        assertFalse(press("7 sp 3 sp =").hasResult)
+    }
+
+    @Test fun missingDenominatorError() {
+        for (keys in listOf("7 sp 3 sp =", "7 sp 3 =", "7 sp =", "7 sp 3 + 1 =")) {
+            val s = press(keys)
+            assertFalse(keys, s.hasResult)
+            assertEquals(keys, "Enter a denominator", s.error)
+        }
+        assertNull(press("7 sp 3 /4 =").error)
     }
 
     @Test fun toggleSignAtCursor() {

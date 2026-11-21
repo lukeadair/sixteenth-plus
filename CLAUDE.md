@@ -22,7 +22,8 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ## How the engine works
 - `CalcState` is immutable; every key press returns a new state. The UI only calls `update { digit("7") }` etc.
-- State is `text` + `cursor` (char index); keys edit at the cursor. `tokenize(text)` gives tokens on demand. Fraction tokens are atomic: `snap` keeps the cursor out of them, and backspace removes them whole.
+- State is `text` + `cursor` (char index); keys edit at the cursor. `tokenize(text)` gives tokens on demand. `snap` keeps the cursor out of fraction tokens (it can only sit at their ends). Backspace deletes one char.
+- Mixed-number entry: `a b/c` (`space()`) once gives `7 `, a second press in the numerator opens the denominator (`7 3⁄`). Digits right after a fraction extend its denominator, and a preset key replaces it.
 - The UI shows the text as one `AnnotatedString` (fractions are inline content), and `Expr.toDisplay`/`toEngine` map cursor positions between display and engine offsets.
 - Tokens are strings. Operators are Unicode `+ − × ÷` (U+2212 minus, not ASCII `-`); ASCII `-` only appears as a sign inside a number token. Fractions use U+2044 `⁄` (`FRAC_SLASH`), not `/`.
 - A space token joins a mixed number (`7 1⁄4`). `mergeMixedNumbers` collapses it to one value **before** precedence, so `3 × 7 1⁄4` = 21.75.
