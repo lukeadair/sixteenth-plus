@@ -273,12 +273,12 @@ data class CalcState(
             var i = toks.size - 1
             if (i >= 1 && toks[i - 1] == " " && isNumTok(toks[i])) i-- // skip a numerator or fraction after a space
             if (i >= 0 && toks[i] == " ") i--
-            return isNumTok(toks.getOrNull(i))
+            return toks.getOrNull(i)?.any(Char::isDigit) == true // a lone "-" sign is not a whole number
         }
 
     /**
      * The "a b/c" key: after a number it starts the fraction part ("7 "), where no number can attach
-     * (start, after an operator or "(") it starts a bare fraction (" ", evaluated as just the fraction),
+     * (start, after an operator, "(" or a lone "-" sign) it starts a bare fraction (" ", evaluated as just the fraction),
      * and inside a typed numerator it opens the denominator ("7 3⁄"). Otherwise it returns this unchanged.
      */
     fun space(): CalcState {
@@ -286,7 +286,7 @@ data class CalcState(
         if (s.fracKeyOpensDenominator) return s.insert(FRAC_SLASH)
         val p = s.prev
         val n = s.next
-        if ((p == null || isOp(p) || p == "(") && !isNumTok(n) && n != " ") return s.insert(" ")
+        if ((p == null || isOp(p) || p == "(" || p == "-") && !isNumTok(n) && n != " ") return s.insert(" ")
         if (p == null || p == " " || p == "(" || p == "-" || isOp(p) || isFractionTok(p) || n == " ") return this
         return s.insert(" ")
     }
@@ -321,6 +321,10 @@ data class CalcState(
             isNumTok(n) && p != " " -> s.cursor to s.cursor + n!!.length
             p == null || isOp(p) || p == "(" -> return s.insert("-")
             else -> return s
+        }
+        val left = tokenize(s.text.substring(0, start))
+        if (left.takeLast(2) == listOf("-", " ")) { // "- 3⁄4": the sign is the lone "-", so drop it
+            return s.edit(s.text.removeRange(start - 2, start - 1), s.cursor - 1)
         }
         val tok = s.text.substring(start, end)
         val flipped = if (tok.startsWith("-")) tok.drop(1) else "-$tok"

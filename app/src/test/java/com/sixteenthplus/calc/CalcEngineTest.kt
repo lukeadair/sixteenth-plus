@@ -160,9 +160,21 @@ class CalcEngineTest {
         assertEquals("Enter a denominator", press("sp 3 =").error)
     }
 
+    @Test fun negativeBareFraction() {
+        assertTrue(press("±").fracKeyEnabled)
+        assertEquals(-0.09375, result("± sp 3 sp 32 ="), 1e-9) // −3/32
+        assertEquals(6.25, result("7 + ± sp 3 /4 ="), 1e-9) // 7 + (−3/4)
+        assertEquals(" 3⁄4", press("± sp 3 /4 ±").text) // ± drops the lone sign, no "- -3⁄4"
+        assertEquals(0.75, result("± sp 3 /4 ± ="), 1e-9)
+        assertEquals(-0.75, result("± sp 3 /4 ± ± ="), 1e-9)
+        assertEquals(" 3", press("± sp 3 ±").text) // also on a typed numerator
+    }
+
     @Test fun fracKeyHasWhole() {
-        for (keys in listOf("7", "7 sp", "7 sp 3", "7 sp 3 sp")) assertTrue(keys, press(keys).fracKeyHasWhole)
-        for (keys in listOf("", "7 +", "sp", "sp 3", "sp 3 sp", "7 =")) assertFalse(keys, press(keys).fracKeyHasWhole)
+        for (keys in listOf("7", "7 sp", "7 sp 3", "7 sp 3 sp", "± 7")) assertTrue(keys, press(keys).fracKeyHasWhole)
+        for (keys in listOf("", "7 +", "sp", "sp 3", "sp 3 sp", "7 =", "±", "± sp", "± sp 3")) {
+            assertFalse(keys, press(keys).fracKeyHasWhole)
+        }
     }
 
     @Test fun missingDenominatorError() {
