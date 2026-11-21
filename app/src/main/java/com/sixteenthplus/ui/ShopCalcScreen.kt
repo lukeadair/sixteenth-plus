@@ -50,6 +50,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
@@ -114,7 +115,7 @@ fun ShopCalcScreen() {
         ) {
             Brand()
             Display(state, onCursor = { c -> update { moveCursor(c) } }, Modifier.weight(1f).fillMaxWidth())
-            Keypad(update)
+            Keypad(update, state)
             TapeRow(onDenom = { d -> update { denom(d) } }) // bottom: easiest thumb reach, next to a b/c
         }
     }
@@ -446,6 +447,7 @@ private fun GaugeView(low: String, high: String, position: Float) {
 private fun PressKey(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
     face: Color,
     lip: Color,
     lipHeight: Dp = 3.dp,
@@ -462,7 +464,9 @@ private fun PressKey(
     val lipNow = if (pressed && lipHeight > 1.dp) 1.dp else lipHeight
 
     Box(
-        modifier.clickable(interaction, indication = null) {
+        modifier
+            .alpha(if (enabled) 1f else 0.4f)
+            .clickable(interaction, indication = null, enabled = enabled) {
             view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             onClick()
         }
@@ -555,6 +559,8 @@ private fun RowScope.Key(
     label: String,
     kind: KeyKind,
     span: Int = 1,
+    enabled: Boolean = true,
+    icon: (@Composable () -> Unit)? = null, // drawn instead of the text label
     onClick: () -> Unit,
 ) {
     val face = when (kind) {
@@ -584,15 +590,44 @@ private fun RowScope.Key(
     PressKey(
         onClick = onClick,
         modifier = Modifier.weight(span.toFloat()).fillMaxHeight(),
+        enabled = enabled,
         face = face,
         lip = lip,
         lipHeight = if (kind == KeyKind.Func || kind == KeyKind.Space) 1.dp else 3.dp,
         outline = when (kind) { KeyKind.Func, KeyKind.Space -> Palette.Line; else -> null },
         dashed = kind == KeyKind.Space,
     ) {
+        if (icon != null) return@PressKey icon()
         val family = if (kind == KeyKind.Func) FontFamily.Default else Oswald
         BasicText(label, style = TextStyle(fg, size, weight, fontFamily = family, letterSpacing = spacing, textAlign = TextAlign.Center))
     }
+}
+
+/**
+ * "a b/c" drawn as two stacked boxes, with a big "a" when a whole number is involved.
+ * The box the next press fills is lit (none when disabled).
+ */
+@Composable
+private fun FracKeyIcon(enabled: Boolean, whole: Boolean, denominatorNext: Boolean) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        if (whole) BasicText("a", style = TextStyle(Palette.KeyFg, 26.sp, FontWeight.Medium, fontFamily = Oswald))
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            FracBox(lit = enabled && !denominatorNext)
+            Box(Modifier.width(18.dp).height(2.dp).background(Palette.DisplayDim))
+            FracBox(lit = enabled && denominatorNext)
+        }
+    }
+}
+
+@Composable
+private fun FracBox(lit: Boolean) {
+    val shape = RoundedCornerShape(2.dp)
+    Box(
+        Modifier
+            .width(14.dp)
+            .height(16.dp)
+            .then(if (lit) Modifier.background(Palette.TapeYellow, shape) else Modifier.border(1.dp, Palette.DisplayDim, shape)),
+    )
 }
 
 @Composable
@@ -601,7 +636,7 @@ private fun KeyRow(content: @Composable RowScope.() -> Unit) {
 }
 
 @Composable
-private fun Keypad(update: (CalcState.() -> CalcState) -> Unit) {
+private fun Keypad(update: (CalcState.() -> CalcState) -> Unit, state: CalcState) {
     Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
         KeyRow {
             Key("(", KeyKind.Paren) { update { lparen() } }
@@ -626,7 +661,10 @@ private fun Keypad(update: (CalcState.() -> CalcState) -> Unit) {
             Key("+", KeyKind.Op) { update { op("+") } }
         }
         KeyRow {
-            Key("a b/c", KeyKind.Space, span = 2) { update { space() } } // starts the fraction of a mixed number
+            // starts the fraction of a mixed number, then moves to its denominator
+            val enabled = state.fracKeyEnabled
+            val icon = @Composable { FracKeyIcon(enabled, state.fracKeyHasWhole, state.fracKeyOpensDenominator) }
+            Key("a b/c", KeyKind.Space, span = 2, enabled = enabled, icon = icon) { update { space() } }
             Key("=", KeyKind.Equals, span = 2) { update { equals() } }
         }
     }
