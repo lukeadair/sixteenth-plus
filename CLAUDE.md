@@ -13,7 +13,9 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 ./gradlew testDebugUnitTest            # unit tests (fast, run after every engine change)
 ./gradlew assembleDebug                # build APK
 adb install -r app/build/outputs/apk/debug/app-debug.apk
+./gradlew bundleRelease                # signed Play bundle → app/build/outputs/bundle/release/app-release.aab
 ```
+Release signing reads the git-ignored `keystore.properties` (upload key in `~/.android-keys/`). Never commit either. Bump `versionCode` in `app/build.gradle.kts` before every Play upload.
 
 ## Layout
 - `app/src/main/java/com/sixteenthplus/calc/CalcEngine.kt`: all math and key handling. Pure Kotlin, no Android imports. Keep it that way so it stays unit-testable.
