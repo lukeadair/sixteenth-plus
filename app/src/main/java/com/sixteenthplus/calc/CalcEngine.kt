@@ -6,7 +6,7 @@ import kotlin.math.floor
 import kotlin.math.roundToLong
 
 /*
- * Pure-Kotlin port of the Sixteenth+ (originally "Shop Calc") engine from cabinet_calc.html.
+ * Pure-Kotlin port of the Sixteenth+ (originally "Shop Calc") engine.
  *
  * The expression is plain text that tokenizes into:
  *  - plain numbers, e.g. "24", "-3", "0.5" (ASCII "-" is a sign, never an operator)
