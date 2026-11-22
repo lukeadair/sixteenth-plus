@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/images/icon.png" width="112" height="112" alt="Sixteenth+ app icon" />
+</p>
+
 <h1 align="center">Sixteenth+</h1>
 
 <p align="center">
