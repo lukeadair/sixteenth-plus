@@ -4,7 +4,7 @@
     android:width="108dp" android:height="108dp"
     android:viewportWidth="512" android:viewportHeight="512">
     <group android:pivotX="256" android:pivotY="256" android:scaleX="0.75" android:scaleY="0.75">
-        <path android:strokeColor="#F0EBE1" android:strokeWidth="20" android:strokeLineCap="round" android:pathData="M96,256H416M96,156V356M416,156V356" />
+        <path android:strokeColor="#F0EBE1" android:strokeWidth="20" android:strokeLineCap="round" android:pathData="M96,256H416M96,176V336M416,176V336" />
         <path android:strokeColor="#9A9A9C" android:strokeWidth="8" android:strokeLineCap="round" android:pathData="M136,256v-22M176,256v-34M216,256v-22M296,256v-22M336,256v-34M376,256v-22" />
         <path android:strokeColor="#F28C28" android:strokeWidth="28" android:pathData="M256,86V426" />
     </group>
