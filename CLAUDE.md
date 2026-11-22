@@ -15,7 +15,7 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ./gradlew bundleRelease                # signed Play bundle → app/build/outputs/bundle/release/app-release.aab
 ```
-Release signing reads the git-ignored `keystore.properties` (upload key in `~/.android-keys/`). Never commit either. Bump `versionCode` in `app/build.gradle.kts` before every Play upload.
+Release signing reads the git-ignored `keystore.properties` (`CN=Luke Adair` key shared with scale-tape, `~/.android-keys/lukeadair-upload.jks`). Never commit either. Bump `versionCode` in `app/build.gradle.kts` for each release.
 
 ## Layout
 - `app/src/main/java/com/sixteenthplus/calc/CalcEngine.kt`: all math and key handling. Pure Kotlin, no Android imports. Keep it that way so it stays unit-testable.
@@ -36,7 +36,7 @@ Release signing reads the git-ignored `keystore.properties` (upload key in `~/.a
 - Any change to engine behaviour gets a test in `CalcEngineTest` written with `press(...)`.
 - Rounding and display (`toNearest16Plus`, `gaugeFor`) are the product. Check edge cases: exact sixteenths, 32nds, values just under a whole number, negatives, `−0`.
 - Keep it lean: no new dependencies, DI, ViewModel or Material library unless a feature truly needs it. The UI is built on `foundation` + `BasicText` on purpose.
-- Package/app id is `com.sixteenthplus`. Changing `applicationId` makes Android treat it as a different app, so never change it as a side effect.
+- App id is `com.lukeadair.sixteenthplus` (changed from `com.sixteenthplus`; the Kotlin package and `namespace` stay `com.sixteenthplus`). Changing `applicationId` makes Android treat it as a different app, so never change it as a side effect.
 
 ## Workflow
 - Run `testDebugUnitTest` before calling a change done; run `assembleDebug` for UI changes.

@@ -17,7 +17,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.sixteenthplus"
+        applicationId = "com.lukeadair.sixteenthplus"
         minSdk = 26
         targetSdk = 36
         versionCode = 4
