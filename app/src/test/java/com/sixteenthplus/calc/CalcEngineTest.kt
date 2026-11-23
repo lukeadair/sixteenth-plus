@@ -186,6 +186,16 @@ class CalcEngineTest {
         assertNull(press("7 sp 3 /4 =").error)
     }
 
+    @Test fun noOperatorOrParensAfterUnfinishedFraction() {
+        for (keys in listOf("7 sp 3", "7 sp 3 sp", "sp 3", "sp 3 sp", "( 7 sp 3 sp", "± sp 3 sp")) {
+            for (key in listOf("+", "−", "×", "÷", "(", ")")) assertEquals("$keys $key", press(keys).text, press("$keys $key").text)
+        }
+        assertEquals("7 3⁄4+", press("7 sp 3 /4 +").text)
+        assertEquals("(7 3⁄4)", press("( 7 sp 3 /4 )").text)
+        assertEquals("7 3⁄4(", press("7 sp 3 /4 (").text)
+        assertEquals("7 3⁄16−", press("7 sp 3 sp 16 −").text)
+    }
+
     @Test fun toggleSignAtCursor() {
         assertEquals("2×-3", press("2 × 3").moveCursor(2).toggleSign().text)
     }

@@ -218,6 +218,8 @@ data class CalcState(
     /** Token left / right of the cursor (only part of it when the cursor is inside a number). */
     private val prev get() = tokenize(before).lastOrNull()
     private val next get() = tokenize(after).firstOrNull()
+    /** The cursor ends a fraction with no denominator yet ("7 3|", "7 3⁄|"): operators and parens wait for one. */
+    private val fracUnfinished get() = missingDenominator(tokenize(before).takeLast(2))
 
     private fun edit(t: String, c: Int) = copy(text = t, cursor = snap(t, c))
     private fun insert(s: String) = edit(before + s + after, cursor + s.length)
@@ -248,7 +250,7 @@ data class CalcState(
         return when {
             p == null -> if (op == "−") s.insert("-") else s // leading minus is a sign
             isOp(p) -> s.edit(s.before.dropLast(1) + op + s.after, s.cursor)
-            p == " " || p == "(" || p == "-" -> s
+            p == " " || p == "(" || p == "-" || s.fracUnfinished -> s
             isOp(s.next) -> s.edit(s.before + op + s.after.drop(1), s.cursor + 1)
             else -> s.insert(op)
         }
@@ -291,13 +293,16 @@ data class CalcState(
         return s.insert(" ")
     }
 
-    fun lparen() = startFresh().insert("(")
+    fun lparen(): CalcState {
+        val s = startFresh()
+        return if (s.fracUnfinished) s else s.insert("(")
+    }
 
     fun rparen(): CalcState {
         val s = startFresh()
         val open = s.before.count { it == '(' } - s.before.count { it == ')' }
         val p = s.prev
-        if (open <= 0 || p == null || p == "(" || p == " " || p == "-" || isOp(p)) return s
+        if (open <= 0 || p == null || p == "(" || p == " " || p == "-" || isOp(p) || s.fracUnfinished) return s
         return s.insert(")")
     }
 
