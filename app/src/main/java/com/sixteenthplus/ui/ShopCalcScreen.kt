@@ -370,7 +370,11 @@ private fun Fraction(
     numCaret: () -> Boolean = { false },
     denCaret: () -> Boolean = { false },
 ) {
-    val small = base.copy(fontSize = base.fontSize * 0.56f, lineHeight = base.fontSize * 0.6f)
+    // from scaled px: nonlinear font scaling would otherwise grow the small parts more than the placeholder
+    val small = with(LocalDensity.current) {
+        val px = base.fontSize.toPx()
+        base.copy(fontSize = (px * 0.56f).toSp(), lineHeight = (px * 0.6f).toSp())
+    }
     val color = base.color
     Column(
         modifier.padding(horizontal = 3.dp).offset(y = (-2).dp),
